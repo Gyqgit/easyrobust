@@ -808,7 +808,10 @@ def train_one_epoch(
             input = input.contiguous(memory_format=torch.channels_last)
 
         with amp_autocast():
-            advinput = pgd_generator(input, target, model, attack_criterion=args.attack_criterion)
+            #advinput = pgd_generator(input, target, model, attack_criterion=args.attack_criterion)
+            advinput = pgd_generator(input, target, model, attack_type='Linf', eps=8 / 255, attack_steps=10,
+                                     attack_lr=2 / 255, random_start_prob=1.0, attack_criterion='regular',
+                                     use_best=False)
             output = model(advinput.clone().detach())
             loss = loss_fn(output, target)
 
@@ -907,7 +910,10 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
         with torch.no_grad():
             output = model(input)
 
-        advinput = pgd_generator(input, target, model, attack_type='Linf', eps=4/255, attack_steps=3, attack_lr=4/255*2/3, random_start_prob=1.0, attack_criterion='regular', use_best=False)
+        #advinput = pgd_generator(input, target, model, attack_type='Linf', eps=8/255, attack_steps=3, attack_lr=4/255*2/3, random_start_prob=1.0, attack_criterion='regular', use_best=False)
+        advinput = pgd_generator(input, target, model, attack_type='Linf', eps=8 / 255, attack_steps=20,
+                                 attack_lr=2/255, random_start_prob=1.0, attack_criterion='regular',
+                                 use_best=False)
         with torch.no_grad():
             output_adv = model(advinput.clone().detach())
 

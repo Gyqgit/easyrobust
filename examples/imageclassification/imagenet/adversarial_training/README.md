@@ -31,3 +31,4 @@ python -m torch.distributed.launch --nproc_per_node=8 examples/imageclassificati
 3，输出路径
 4，实验名称
 不同实验修改
+5，调整pgd参数 训练和验证的
