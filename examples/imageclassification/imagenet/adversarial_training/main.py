@@ -74,7 +74,7 @@ parser.add_argument('-c', '--config', default='', type=str, metavar='FILE',
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 
-# Dataset / Model parameters
+#数据集加载
 parser.add_argument('--data_dir', metavar='DIR', default='',
                     help='path to dataset')
 parser.add_argument('--train-split', metavar='NAME', default='train',
@@ -85,6 +85,8 @@ parser.add_argument('--dataset-download', action='store_true', default=False,
                     help='Allow download of dataset for torch/ and tfds/ datasets that support it.')
 parser.add_argument('--class-map', default='', type=str, metavar='FILENAME',
                     help='path to class to idx mapping file (default: "")')
+
+#模型设置 模型，是否加载checkpoint 输出类别数目
 parser.add_argument('--model', default='resnet50', type=str, metavar='MODEL',
                     help='Name of model to train (default: "resnet50"')
 parser.add_argument('--pretrained', action='store_true', default=False,
@@ -97,8 +99,12 @@ parser.add_argument('--no-resume-opt', action='store_true', default=False,
                     help='prevent resume of optimizer state when resuming model')
 parser.add_argument('--num-classes', type=int, default=1000, metavar='N',
                     help='number of label classes (Model default if None)')
+
+#池化策略
 parser.add_argument('--gp', default=None, type=str, metavar='POOL',
                     help='Global pool type, one of (fast, avg, max, avgmax, avgmaxc). Model default if None.')
+
+#数据集处理
 parser.add_argument('--img-size', type=int, default=None, metavar='N',
                     help='Image patch size (default: None => model default)')
 parser.add_argument('--input-size', default=None, nargs=3, type=int,
@@ -222,9 +228,11 @@ parser.add_argument('--mixup-mode', type=str, default='batch',
 parser.add_argument('--mixup-off-epoch', default=0, type=int, metavar='N',
                     help='Turn off mixup after this epoch, disabled if 0 (default: 0)')
 parser.add_argument('--smoothing', type=float, default=0.0,
-                    help='Label smoothing (default: 0.1)')
+                    help='Label smoothing (default: 0.0)')
 parser.add_argument('--train-interpolation', type=str, default='random',
                     help='Training interpolation (random, bilinear, bicubic default: "random")')
+
+#丢弃正则化
 parser.add_argument('--drop', type=float, default=0.0, metavar='PCT',
                     help='Dropout rate (default: 0.)')
 parser.add_argument('--drop-connect', type=float, default=None, metavar='PCT',
@@ -283,10 +291,16 @@ parser.add_argument('--channels-last', action='store_true', default=False,
                     help='Use channels_last memory layout')
 parser.add_argument('--pin-mem', action='store_true', default=False,
                     help='Pin CPU memory in DataLoader for more efficient (sometimes) transfer to GPU.')
+
+#设置输出路径
 parser.add_argument('--output', default='', type=str, metavar='PATH',
                     help='path to output folder (default: none, current dir)')
+
+#设置实验名称
 parser.add_argument('--experiment', default='', type=str, metavar='NAME',
                     help='name of train experiment, name of sub-folder for output')
+
+
 parser.add_argument('--eval-metric', default='top1', type=str, metavar='EVAL_METRIC',
                     help='Best metric (default: "top1"')
 parser.add_argument('--tta', type=int, default=0, metavar='N',
@@ -303,6 +317,7 @@ parser.add_argument('--log-wandb', action='store_true', default=False,
 parser.add_argument('--attack_criterion', type=str, default='regular', choices=['regular', 'smooth', 'mixup'])
 parser.add_argument('--no_standard_aug', action='store_true', default=False)
 
+#光照噪声增强
 class Lighting(object):
     """
     Lighting noise (see https://git.io/fhBOc)
@@ -324,6 +339,7 @@ class Lighting(object):
 
         return img.add(rgb.view(3, 1, 1).expand_as(img))
 
+#归一化函数
 def normalize_fn(tensor, mean, std):
     """Differentiable version of torchvision.functional.normalize"""
     # here we assume the color channel is in at dim=1
@@ -331,6 +347,7 @@ def normalize_fn(tensor, mean, std):
     std = std[None, :, None, None]
     return tensor.sub(mean).div(std)
 
+#归一化类
 class NormalizeByChannelMeanStd(nn.Module):
     def __init__(self, mean, std):
         super(NormalizeByChannelMeanStd, self).__init__()
@@ -365,9 +382,10 @@ def _parse_args():
 
 
 def main():
+#加载参数，记录
     setup_default_logging()
     args, args_text = _parse_args()
-    
+#W&B 是一个用于跟踪实验和记录机器学习实验结果的工具。
     if args.log_wandb:
         if has_wandb:
             wandb.init(project=args.experiment, config=args)
@@ -375,6 +393,7 @@ def main():
             _logger.warning("You've requested to log metrics to wandb but package not found. "
                             "Metrics not being logged to wandb, try `pip install wandb`")
 
+#设置训练gpu数目
     args.distributed = False
     if 'WORLD_SIZE' in os.environ:
         args.distributed = int(os.environ['WORLD_SIZE']) > 1
@@ -396,6 +415,7 @@ def main():
         _logger.info('Training with a single process on 1 GPUs.')
     assert args.rank >= 0
 
+#混合精度训练AMP 是一种混合精度训练的技术，通过使用浮点 16 位（half-precision）进行前向和反向传播，同时在梯度更新时使用浮点 32 位（single-precision），从而提高训练速度并减少内存占用。
     # resolve AMP arguments based on PyTorch / Apex availability
     use_amp = None
     if args.amp:
@@ -414,6 +434,7 @@ def main():
 
     random_seed(args.seed, args.rank)
 
+#模型设置
     model = create_model(
         args.model,
         pretrained=args.pretrained,
@@ -445,12 +466,14 @@ def main():
         assert num_aug_splits > 1 or args.resplit
         model = convert_splitbn_model(model, max(num_aug_splits, 2))
 
+#模型加模块
     normalize = NormalizeByChannelMeanStd(
             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     model = nn.Sequential(normalize, model)
 
     # move model to GPU, enable channels last layout if set
     model.cuda()
+
     if args.channels_last:
         model = model.to(memory_format=torch.channels_last)
 
@@ -472,6 +495,8 @@ def main():
         assert not args.sync_bn, 'Cannot use SyncBatchNorm with torchscripted model'
         model = torch.jit.script(model)
 
+
+#优化器设置
     optimizer = create_optimizer_v2(model, **optimizer_kwargs(cfg=args))
 
     # setup automatic mixed-precision (AMP) loss scaling and op casting
@@ -560,51 +585,8 @@ def main():
     if args.resplit:
     # apply RE to second half of batch if no aug split otherwise line up with aug split
         re_num_splits = num_aug_splits or 2
-    train_transform = create_transform(
-        input_size=data_config['input_size'],
-        is_training=True,
-        use_prefetcher=False,
-        no_aug=args.no_aug,
-        scale=args.scale,
-        ratio=args.ratio,
-        hflip=args.hflip,
-        vflip=args.vflip,
-        color_jitter=args.color_jitter,
-        auto_augment=args.aa,
-        interpolation=train_interpolation,
-        mean=data_config['mean'],
-        std=data_config['std'],
-        crop_pct=None,
-        tf_preprocessing=False,
-        re_prob=args.reprob,
-        re_mode=args.remode,
-        re_count=args.recount,
-        re_num_splits=re_num_splits,
-        separate=num_aug_splits > 0,
-    )
-    val_transform = create_transform(
-        input_size=data_config['input_size'],
-        is_training=False,
-        use_prefetcher=False,
-        no_aug=False,
-        scale=None,
-        ratio=False,
-        hflip=0.5,
-        vflip=0.,
-        color_jitter=0.4,
-        auto_augment=None,
-        interpolation=data_config['interpolation'],
-        mean=data_config['mean'],
-        std=data_config['std'],
-        crop_pct=data_config['crop_pct'],
-        tf_preprocessing=False,
-        re_prob=0.,
-        re_mode='const',
-        re_count=1,
-        re_num_splits=re_num_splits,
-        separate=num_aug_splits > 0,
-    )
 
+#输入数据处理（数据增强）
     if not args.no_standard_aug:
         train_transform = transforms.Compose([
             transforms.RandomResizedCrop(224),
@@ -627,11 +609,56 @@ def main():
                 transforms.CenterCrop(224),
                 transforms.ToTensor()
             ])
+    else:
+        train_transform = create_transform(
+            input_size=data_config['input_size'],
+            is_training=True,
+            use_prefetcher=False,
+            no_aug=args.no_aug,
+            scale=args.scale,
+            ratio=args.ratio,
+            hflip=args.hflip,
+            vflip=args.vflip,
+            color_jitter=args.color_jitter,
+            auto_augment=args.aa,
+            interpolation=train_interpolation,
+            mean=data_config['mean'],
+            std=data_config['std'],
+            crop_pct=None,
+            tf_preprocessing=False,
+            re_prob=args.reprob,
+            re_mode=args.remode,
+            re_count=args.recount,
+            re_num_splits=re_num_splits,
+            separate=num_aug_splits > 0,
+        )
+        val_transform = create_transform(
+            input_size=data_config['input_size'],
+            is_training=False,
+            use_prefetcher=False,
+            no_aug=False,
+            scale=None,
+            ratio=False,
+            hflip=0.5,
+            vflip=0.,
+            color_jitter=0.4,
+            auto_augment=None,
+            interpolation=data_config['interpolation'],
+            mean=data_config['mean'],
+            std=data_config['std'],
+            crop_pct=data_config['crop_pct'],
+            tf_preprocessing=False,
+            re_prob=0.,
+            re_mode='const',
+            re_count=1,
+            re_num_splits=re_num_splits,
+            separate=num_aug_splits > 0,
+        )
 
     print(train_transform)
     print(val_transform)
 
-    # create the train and eval datasets
+# create the train and eval datasets
     dataset_train = ImageNetDataset(args.data_dir, split=args.train_split, transform=train_transform)
     dataset_eval = ImageNetDataset(args.data_dir, split=args.val_split, transform=val_transform)
 
@@ -663,7 +690,7 @@ def main():
         persistent_workers=True
     )
 
-    # setup loss function
+# 设置损失
     if args.jsd_loss:
         assert num_aug_splits > 1  # JSD only valid with aug splits set
         train_loss_fn = JsdCrossEntropy(num_splits=num_aug_splits, smoothing=args.smoothing)
@@ -683,7 +710,7 @@ def main():
     train_loss_fn = train_loss_fn.cuda()
     validate_loss_fn = nn.CrossEntropyLoss().cuda()
 
-    # setup checkpoint saver and eval metric tracking
+# setup checkpoint saver and eval metric tracking
     eval_metric = args.eval_metric
     best_metric = None
     best_epoch = None
